@@ -41,12 +41,12 @@ let documentation;
 function generateXmlDoc(nodes) {
   /** @type {DocNode[]} */
   let out = [];
-  
+
   /** @type {DocNode} */
   let summary = {
     type: 'summary',
     items: [],
-    render: function(summaryNode, prefix) {
+    render: function (summaryNode, prefix) {
       /** @type {string[]} **/
       let render = [];
       render.push(`${prefix}<summary>`);
@@ -57,41 +57,42 @@ function generateXmlDoc(nodes) {
     }
   };
 
+  /** @type {DocNode} */
+  let list = {
+    type: 'list',
+    items: [],
+    render: function (listNode, prefix) {
+      /** @type {string[]} **/
+      let render = [];
+      render.push(`${prefix}<list>`);
+      render.push(...listNode.items.flatMap(t => `${prefix}${t}`));
+      render.push(`${prefix}</list>`);
+      //  render.push(`${prefix}${listNode.items.map(i => `${prefix}${i}`).join(`\n`)}`);               render.push(`${prefix}</list>`);
+      return render;
+    }
+  };
+
+  let listItems = [];
+
   nodes.forEach(node => {
 
-    /** @type {DocNode} **/
-    let lastItem = out.pop();
+    // TODO: this should really be better, but for the first pass, it's fine
+    if (node.type !== 'li' && listItems.length > 0) {
+      list.items = listItems;
+      summary.items.push(...list.render(list, ''));
+      listItems = [];
+    }
 
-    switch (node.type ) {
+    switch (node.type) {
       case 'text':
-        if(node.text) {
+        // first, we clean up lists
+
+        if (node.text) {
           summary.items.push(node.text);
         }
         break;
       case 'li':
-        // check if we already have a list item in the array (last)
-        // if a summary object does not exist, we add it now        
-        // if(!lastItem || lastItem.type !== 'list') {
-        //   if(lastItem) {
-        //     // push it back
-        //     out.push(lastItem);
-        //   }
-
-        //   lastItem = {
-        //     type: 'list',
-        //     items: [],
-        //     render: function(listNode, prefix) {
-        //        /** @type {string[]} **/
-        //        let render = [];
-        //        render.push(`${prefix}<list>`);
-        //        render.push(`${prefix}${listNode.items.map(i => `${prefix}${i}`).join(`\n`)}`);               render.push(`${prefix}</list>`);
-        //        return render;
-        //     }
-        //   };
-        // }
-
-        // lastItem.items.push(`<item><description>${node.text}</description></item>`);
-        // out.push(lastItem);
+        listItems.push(`<item><description>${node.text}</description></item>`);
         break;
       case 'code':
         break;
@@ -100,7 +101,7 @@ function generateXmlDoc(nodes) {
       default:
         // properties, h0...h4
         break;
-    } 
+    }
   });
 
   out.push(summary);
@@ -109,44 +110,44 @@ function generateXmlDoc(nodes) {
   return out.flatMap(root => root.render(root, "/// "));
 }
 
-(async function() {
-    const typesDir = path.join(PROJECT_DIR, 'types');
-    if (!fs.existsSync(typesDir))
-      fs.mkdirSync(typesDir)
-    // writeFile(path.join(typesDir, 'protocol.d.ts'), fs.readFileSync(path.join(PROJECT_DIR, 'src', 'server', 'chromium', 'protocol.ts'), 'utf8'));
-    documentation = parseApi(path.join(PROJECT_DIR, 'docs', 'src', 'api'));
-    documentation.filterForLanguage('csharp');
-    documentation.copyDocsFromSuperclasses([]);
+(async function () {
+  const typesDir = path.join(PROJECT_DIR, 'types');
+  if (!fs.existsSync(typesDir))
+    fs.mkdirSync(typesDir)
+  // writeFile(path.join(typesDir, 'protocol.d.ts'), fs.readFileSync(path.join(PROJECT_DIR, 'src', 'server', 'chromium', 'protocol.ts'), 'utf8'));
+  documentation = parseApi(path.join(PROJECT_DIR, 'docs', 'src', 'api'));
+  documentation.filterForLanguage('csharp');
+  documentation.copyDocsFromSuperclasses([]);
 
-    const createMemberLink = (text) => {
-      const anchor = text.toLowerCase().split(',').map(c => c.replace(/[^a-z]/g, '')).join('-');
-      return `[${text}](https://github.com/microsoft/playwright/blob/master/docs/api.md#${anchor})`;
-    };
+  const createMemberLink = (text) => {
+    const anchor = text.toLowerCase().split(',').map(c => c.replace(/[^a-z]/g, '')).join('-');
+    return `[${text}](https://github.com/microsoft/playwright/blob/master/docs/api.md#${anchor})`;
+  };
 
-    // get the template for a class
-    let template = fs.readFileSync("./templates/interface.cs", 'utf-8');
-    template = template.replace('[PW_TOOL_VERSION]', `${__filename.substring(path.join(__dirname, '..', '..').length).split(path.sep).join(path.posix.sep)}`);
+  // get the template for a class
+  let template = fs.readFileSync("./templates/interface.cs", 'utf-8');
+  template = template.replace('[PW_TOOL_VERSION]', `${__filename.substring(path.join(__dirname, '..', '..').length).split(path.sep).join(path.posix.sep)}`);
 
-    // fs.mkdirSync('../generate_types/csharp');
-    documentation.classes.forEach(element => {
-      console.log(`Generating ${element.name}`);
-      
-      const out = [];
+  // fs.mkdirSync('../generate_types/csharp');
+  documentation.classes.forEach(element => {
+    console.log(`Generating ${element.name}`);
 
-      // map the name to a C# friendly one (we prepend an I to denote an interface)
-      let name = `I${element.name}`;
+    const out = [];
 
-      let docs = generateXmlDoc(element.spec);
-      
-      Array.prototype.push.apply(out, docs);
+    // map the name to a C# friendly one (we prepend an I to denote an interface)
+    let name = `I${element.name}`;
 
-      out.push(`public interface ${name}`);
-      out.push('{');
-      out.push('}');
+    let docs = generateXmlDoc(element.spec);
 
-      
-      let content = template.replace('[CONTENT]', out.join("\n\t"));
-      fs.writeFileSync(`../generate_types/csharp/${name}.cs`, content);
-    });
+    Array.prototype.push.apply(out, docs);
+
+    out.push(`public interface ${name}`);
+    out.push('{');
+    out.push('}');
+
+
+    let content = template.replace('[CONTENT]', out.join("\n\t"));
+    fs.writeFileSync(`../generate_types/csharp/${name}.cs`, content);
+  });
 
 })();
