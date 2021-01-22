@@ -34,13 +34,7 @@ let documentation;
  *    render: function(DocNode, string):string[],
  * }} DocNode */
 
-//  class DocNode {
-//    constructor() {
-//      this.type = 
-//    }
-//  }
 /**
- * 
  * @param {import('../markdown').MarkdownNode[]} nodes 
  */
 function generateXmlDoc(nodes) {
@@ -113,47 +107,20 @@ function generateXmlDoc(nodes) {
   return out.flatMap(root => root.render(root, "/// "));
 }
 
-/** @param {Documentation.Type} type */
-function translateType(type) {
-  if (type.union) {
-    console.log(type);
-  }
-}
+/**
+ * @param {string} memberKind  
+ * @param {string} name 
+ * @param {Documentation.Member} member */
+function translateMemberName(memberKind, name, member) {
 
-// /** @param {!Map<string, !Documentation.Member>} members */
-/** @param {Documentation.Class} member */
-function generateMembers(member) {
-  let out = [];
-
-  /**** METHODS  ***/
-  member.methodsArray.forEach(method => {
-    let name = translateMemberName(method.kind, method.name);
-    let returnType = "Task";
-
-    if (method.type.name !== 'void') {
-      translateType(method.type);
-      returnType = `Task /* ${method.type.expression} */`;
+  // check if there's an alias in the docs, in which case
+  // we return that, otherwise, we apply our dotnet magic to it
+  if (member) {
+    if (member.alias !== name) {
+      return member.alias;
     }
+  }
 
-    out.push(`${returnType} ${name}();`);
-
-  });
-
-  /**** EVENTS  ****/
-  member.eventsArray.forEach(event => {
-
-    out.push(...generateXmlDoc(event.spec));
-
-    let eventType = event.type.name !== 'void' ? `EventHandler<${event.type.name}>` : `EventHandler`;
-    out.push(`public event ${eventType} ${translateMemberName(event.kind, event.name)};`);
-    out.push(''); // we want an empty line in between
-  });
-
-  return out.flatMap(e => `\t${e}`);
-}
-
-/** @param {string} name */
-function translateMemberName(memberKind, name) {
   let assumedName = name.charAt(0).toUpperCase() + name.substring(1);
   switch (memberKind) {
     case "interface":
@@ -165,6 +132,45 @@ function translateMemberName(memberKind, name) {
     default:
       return `${name}-UN`;
   }
+}
+
+/** @param {Documentation.Type} type */
+function translateType(type) {
+  if (type.union) {
+    // console.log(type);
+  }
+}
+
+/** @param {Documentation.Class} member */
+function generateMembers(member) {
+  const out = [];
+
+  /**** METHODS  ***/
+  member.methodsArray.forEach(method => {
+    let name = translateMemberName(method.kind, method.name, method);
+    let returnType = "Task";
+
+    if (method.type.name !== 'void') {
+      translateType(method.type);
+      returnType = `Task<>`;
+    }
+
+    // out.push(...generateXmlDoc(method.spec));
+    out.push(`${returnType} ${name}();`);
+    out.push('');
+  });
+
+  /**** EVENTS  ****/
+  member.eventsArray.forEach(event => {
+
+    out.push(...generateXmlDoc(event.spec));
+
+    let eventType = event.type.name !== 'void' ? `EventHandler<${event.type.name}>` : `EventHandler`;
+    out.push(`public event ${eventType} ${translateMemberName(event.kind, event.name, event)};`);
+    out.push(''); // we want an empty line in between
+  });
+
+  return out.flatMap(e => `\t${e}`);
 }
 
 (async function () {
@@ -187,12 +193,16 @@ function translateMemberName(memberKind, name) {
 
   // fs.mkdirSync('../generate_types/csharp');
   documentation.classes.forEach(element => {
+    if (element.name !== "Page") {
+      return;
+    }
+
     console.log(`Generating ${element.name}`);
 
     const out = [];
 
     // map the name to a C# friendly one (we prepend an I to denote an interface)
-    let name = translateMemberName('interface', element.name);
+    let name = translateMemberName('interface', element.name, undefined);
 
     let docs = generateXmlDoc(element.spec);
 
