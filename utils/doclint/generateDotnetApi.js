@@ -34,6 +34,11 @@ let documentation;
  *    render: function(DocNode, string):string[],
  * }} DocNode */
 
+//  class DocNode {
+//    constructor() {
+//      this.type = 
+//    }
+//  }
 /**
  * 
  * @param {import('../markdown').MarkdownNode[]} nodes 
@@ -72,6 +77,8 @@ function generateXmlDoc(nodes) {
     }
   };
 
+  out.push(summary);
+
   let listItems = [];
 
   nodes.forEach(node => {
@@ -86,7 +93,6 @@ function generateXmlDoc(nodes) {
     switch (node.type) {
       case 'text':
         // first, we clean up lists
-
         if (node.text) {
           summary.items.push(node.text);
         }
@@ -104,10 +110,61 @@ function generateXmlDoc(nodes) {
     }
   });
 
-  out.push(summary);
-
-  /** @type DocNode **/
   return out.flatMap(root => root.render(root, "/// "));
+}
+
+/** @param {Documentation.Type} type */
+function translateType(type) {
+  if (type.union) {
+    console.log(type);
+  }
+}
+
+// /** @param {!Map<string, !Documentation.Member>} members */
+/** @param {Documentation.Class} member */
+function generateMembers(member) {
+  let out = [];
+
+  /**** METHODS  ***/
+  member.methodsArray.forEach(method => {
+    let name = translateMemberName(method.kind, method.name);
+    let returnType = "Task";
+
+    if (method.type.name !== 'void') {
+      translateType(method.type);
+      returnType = `Task /* ${method.type.expression} */`;
+    }
+
+    out.push(`${returnType} ${name}();`);
+
+  });
+
+  /**** EVENTS  ****/
+  member.eventsArray.forEach(event => {
+
+    out.push(...generateXmlDoc(event.spec));
+
+    let eventType = event.type.name !== 'void' ? `EventHandler<${event.type.name}>` : `EventHandler`;
+    out.push(`public event ${eventType} ${translateMemberName(event.kind, event.name)};`);
+    out.push(''); // we want an empty line in between
+  });
+
+  return out.flatMap(e => `\t${e}`);
+}
+
+/** @param {string} name */
+function translateMemberName(memberKind, name) {
+  let assumedName = name.charAt(0).toUpperCase() + name.substring(1);
+  switch (memberKind) {
+    case "interface":
+      return `I${assumedName}`;
+    case "method":
+      return `${assumedName}Async`;
+    case "event":
+      return `On${assumedName}`;
+    default:
+      return `${name}-UN`;
+  }
 }
 
 (async function () {
@@ -135,7 +192,7 @@ function generateXmlDoc(nodes) {
     const out = [];
 
     // map the name to a C# friendly one (we prepend an I to denote an interface)
-    let name = `I${element.name}`;
+    let name = translateMemberName('interface', element.name);
 
     let docs = generateXmlDoc(element.spec);
 
@@ -143,6 +200,10 @@ function generateXmlDoc(nodes) {
 
     out.push(`public interface ${name}`);
     out.push('{');
+
+    // generate the members
+    out.push(...generateMembers(element));
+
     out.push('}');
 
 
