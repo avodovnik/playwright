@@ -27,84 +27,162 @@ const { render } = require('../markdown');
 
 let documentation;
 
-/** @typedef {{
- *    type: 'summary' | 'list' | 'example' | 'remarks',
- *    text?: string[],
- *    items?: string[],
- *    render: function(DocNode, string):string[],
- * }} DocNode */
+{
+  const typesDir = path.join(PROJECT_DIR, 'types');
+  if (!fs.existsSync(typesDir))
+    fs.mkdirSync(typesDir)
+  // writeFile(path.join(typesDir, 'protocol.d.ts'), fs.readFileSync(path.join(PROJECT_DIR, 'src', 'server', 'chromium', 'protocol.ts'), 'utf8'));
+  documentation = parseApi(path.join(PROJECT_DIR, 'docs', 'src', 'api'));
+  documentation.filterForLanguage('csharp');
+  documentation.copyDocsFromSuperclasses([]);
+
+  // documentation.setLinkRenderer(item => {
+  //   // TODO: this should probably do something smarter
+  //   return
+  // });
+
+  // get the template for a class
+  const template = fs.readFileSync("./templates/interface.cs", 'utf-8')
+    .replace('[PW_TOOL_VERSION]', `${__filename.substring(path.join(__dirname, '..', '..').length).split(path.sep).join(path.posix.sep)}`);
+
+  // fs.mkdirSync('../generate_types/csharp');
+  documentation.classes.forEach(element => {
+    if (element.name !== "Page") {
+      return;
+    }
+    console.log(`Generating ${element.name}`);
+
+    const out = [];
+
+    // map the name to a C# friendly one (we prepend an I to denote an interface)
+    let name = translateMemberName('interface', element.name, undefined);
+
+    let docs = renderXmlDoc(element.spec, 80);
+
+    Array.prototype.push.apply(out, docs);
+
+    out.push(`public interface ${name}`);
+    out.push('{');
+
+    const members = generateMembers(element);
+    // generate the members
+    out.push(...members);
+
+    out.push('}');
+
+
+    let content = template.replace('[CONTENT]', out.join("\n\t"));
+    fs.writeFileSync(`../generate_types/csharp/${name}.cs`, content);
+  });
+}
 
 /**
- * @param {import('../markdown').MarkdownNode[]} nodes 
+ * @param {Documentation.MarkdownNode[]} nodes
+ * @param {number=} maxColumns
  */
-function generateXmlDoc(nodes) {
-  /** @type {DocNode[]} */
-  let out = [];
+function renderXmlDoc(nodes, maxColumns) {
+  const summary = [];
+  const examples = [];
+  let lastNode;
 
-  /** @type {DocNode} */
-  let summary = {
-    type: 'summary',
-    items: [],
-    render: function (summaryNode, prefix) {
-      /** @type {string[]} **/
-      let render = [];
-      render.push(`${prefix}<summary>`);
-      render.push(...summaryNode.items.flatMap(t => `${prefix}${t}`));
-      render.push(`${prefix}</summary>`);
+  summary.push('<summary>');
+  for (let node of nodes) {
+    lastNode = innerRenderXmlNode('///', node, lastNode, summary, examples, maxColumns);
+  }
+  summary.push('</summary>');
 
-      return render;
-    }
+  // add examples
+  summary.push(...examples);
+  return summary.map(n => `/// ${n}`);
+}
+
+/**
+ * @param {string} indent
+ * @param {Documentation.MarkdownNode} node
+ * @param {Documentation.MarkdownNode} lastNode
+ * @param {number=} maxColumns
+ * @param {string[]} summary
+ * @param {string[]} examples
+ */
+function innerRenderXmlNode(indent, node, lastNode, summary, examples, maxColumns) {
+  /** @param {string[]} a */
+  const newLine = (a) => {
+    if (a[a.length - 1] !== '')
+      a.push('');
   };
 
-  /** @type {DocNode} */
-  let list = {
-    type: 'list',
-    items: [],
-    render: function (listNode, prefix) {
-      /** @type {string[]} **/
-      let render = [];
-      render.push(`${prefix}<list>`);
-      render.push(...listNode.items.flatMap(t => `${prefix}${t}`));
-      render.push(`${prefix}</list>`);
-      //  render.push(`${prefix}${listNode.items.map(i => `${prefix}${i}`).join(`\n`)}`);               render.push(`${prefix}</list>`);
-      return render;
-    }
-  };
+  // documentation.renderLinksInText([ node ]);
 
-  out.push(summary);
+  let escapedText = node.text;
+  // resolve links (within [])
 
-  let listItems = [];
-
-  nodes.forEach(node => {
-
-    // TODO: this should really be better, but for the first pass, it's fine
-    if (node.type !== 'li' && listItems.length > 0) {
-      list.items = listItems;
-      summary.items.push(...list.render(list, ''));
-      listItems = [];
+  if (node.type === 'text') {
+    // clear up the list, if there was one
+    if (lastNode && lastNode.type === 'li') {
+      summary.push('</list>');
     }
 
-    switch (node.type) {
-      case 'text':
-        // first, we clean up lists
-        if (node.text) {
-          summary.items.push(node.text);
-        }
-        break;
-      case 'li':
-        listItems.push(`<item><description>${node.text}</description></item>`);
-        break;
-      case 'code':
-        break;
-      case 'note':
-        break;
-      default:
-        // properties, h0...h4
-        break;
+    summary.push(...wrapText(escapedText, maxColumns));
+
+    return lastNode;
+  }
+
+  if (node.type === 'li') {
+    if (escapedText.startsWith('extends: ')) {
+      summary.push(...wrapText(`<seealso cref="${escapedText.substring(9)}"/>`, maxColumns));
+      return undefined;
     }
+    // if the previous node was no li, start list
+    if (lastNode && lastNode.type !== 'li') {
+      summary.push(`<list>`);
+    }
+
+    summary.push(...wrapText(`<item><description>${escapedText}</description></item>`, maxColumns));
+  }
+
+  return lastNode;
+}
+
+/**
+ * @param {string} text
+ */
+function tokenizeNoBreakLinks(text) {
+  const links = [];1
+  // Don't wrap simple links with spaces.
+  text = text.replace(/\[[^\]]+\]/g, match => {
+    links.push(match);
+    return `[${links.length - 1}]`;
   });
+  return text.split(' ').map(c => c.replace(/\[(\d+)\]/g, (_, p1) => links[+p1]));
+}
 
-  return out.flatMap(root => root.render(root, "/// "));
+/**
+ * @param {string} text
+ * @param {number=} maxColumns
+ * @param {string=} prefix
+ */
+function wrapText(text, maxColumns = 0, prefix = '') {
+  if (!maxColumns)
+    return prefix + text;
+  if (text.trim().startsWith('|'))
+    return prefix + text;
+  const indent = ' '.repeat(prefix.length);
+  const lines = [];
+  maxColumns -= indent.length;
+  const words =  tokenizeNoBreakLinks(text);
+  let line = '';
+  for (const word of words) {
+    if (line.length && line.length + word.length < maxColumns) {
+      line += ' ' + word;
+    } else {
+      if (line)
+        lines.push(line);
+      line = (lines.length ? indent : prefix) + word;
+    }
+  }
+  if (line)
+    lines.push(line);
+  return lines;
 }
 
 /**
@@ -137,8 +215,21 @@ function translateMemberName(memberKind, name, member) {
 /** @param {Documentation.Type} type */
 function translateType(type) {
   if (type.union) {
-    // console.log(type);
+    if (type.union[0].name === 'null') {
+      // for dotnet, this is a nullable type
+      // unless it's something like a string
+      const typeName = type.union[1].name;
+
+      if (typeName === 'string'
+        || typeName === 'int') {
+        return typeName;
+      }
+
+      return `${typeName}?`;
+    }
   }
+
+  return type.name;
 }
 
 /** @param {Documentation.Class} member */
@@ -151,11 +242,11 @@ function generateMembers(member) {
     let returnType = "Task";
 
     if (method.type.name !== 'void') {
-      translateType(method.type);
-      returnType = `Task<>`;
+      returnType = `Task<${translateType(method.type)}>`;
     }
 
     // out.push(...generateXmlDoc(method.spec));
+
     out.push(`${returnType} ${name}();`);
     out.push('');
   });
@@ -163,62 +254,12 @@ function generateMembers(member) {
   /**** EVENTS  ****/
   member.eventsArray.forEach(event => {
 
-    out.push(...generateXmlDoc(event.spec));
+    //  out.push(...generateXmlDoc(event.spec));
 
     let eventType = event.type.name !== 'void' ? `EventHandler<${event.type.name}>` : `EventHandler`;
     out.push(`public event ${eventType} ${translateMemberName(event.kind, event.name, event)};`);
     out.push(''); // we want an empty line in between
   });
 
-  return out.flatMap(e => `\t${e}`);
+  return out.map(e => `\t${e}`);
 }
-
-(async function () {
-  const typesDir = path.join(PROJECT_DIR, 'types');
-  if (!fs.existsSync(typesDir))
-    fs.mkdirSync(typesDir)
-  // writeFile(path.join(typesDir, 'protocol.d.ts'), fs.readFileSync(path.join(PROJECT_DIR, 'src', 'server', 'chromium', 'protocol.ts'), 'utf8'));
-  documentation = parseApi(path.join(PROJECT_DIR, 'docs', 'src', 'api'));
-  documentation.filterForLanguage('csharp');
-  documentation.copyDocsFromSuperclasses([]);
-
-  const createMemberLink = (text) => {
-    const anchor = text.toLowerCase().split(',').map(c => c.replace(/[^a-z]/g, '')).join('-');
-    return `[${text}](https://github.com/microsoft/playwright/blob/master/docs/api.md#${anchor})`;
-  };
-
-  // get the template for a class
-  let template = fs.readFileSync("./templates/interface.cs", 'utf-8');
-  template = template.replace('[PW_TOOL_VERSION]', `${__filename.substring(path.join(__dirname, '..', '..').length).split(path.sep).join(path.posix.sep)}`);
-
-  // fs.mkdirSync('../generate_types/csharp');
-  documentation.classes.forEach(element => {
-    if (element.name !== "Page") {
-      return;
-    }
-
-    console.log(`Generating ${element.name}`);
-
-    const out = [];
-
-    // map the name to a C# friendly one (we prepend an I to denote an interface)
-    let name = translateMemberName('interface', element.name, undefined);
-
-    let docs = generateXmlDoc(element.spec);
-
-    Array.prototype.push.apply(out, docs);
-
-    out.push(`public interface ${name}`);
-    out.push('{');
-
-    // generate the members
-    out.push(...generateMembers(element));
-
-    out.push('}');
-
-
-    let content = template.replace('[CONTENT]', out.join("\n\t"));
-    fs.writeFileSync(`../generate_types/csharp/${name}.cs`, content);
-  });
-
-})();
