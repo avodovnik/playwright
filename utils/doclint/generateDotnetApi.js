@@ -36,10 +36,16 @@ let documentation;
   documentation.filterForLanguage('csharp');
   documentation.copyDocsFromSuperclasses([]);
 
-  // documentation.setLinkRenderer(item => {
-  //   // TODO: this should probably do something smarter
-  //   return
-  // });
+  documentation.setLinkRenderer(item => {
+    if (item.clazz) {
+      return `<seealso cref="${item.clazz.name}"/>`;
+    } else {
+      return "unknown";
+    }
+    // console.log(item);
+    // // TODO: this should probably do something smarter
+    // return "<a href=\"https://www.google.com\">Link</a>";
+  });
 
   // get the template for a class
   const template = fs.readFileSync("./templates/interface.cs", 'utf-8')
@@ -47,9 +53,6 @@ let documentation;
 
   // fs.mkdirSync('../generate_types/csharp');
   documentation.classes.forEach(element => {
-    if (element.name !== "Page") {
-      return;
-    }
     console.log(`Generating ${element.name}`);
 
     const out = [];
@@ -57,6 +60,7 @@ let documentation;
     // map the name to a C# friendly one (we prepend an I to denote an interface)
     let name = translateMemberName('interface', element.name, undefined);
 
+    documentation.renderLinksInText(element.spec);
     let docs = renderXmlDoc(element.spec, 80);
 
     Array.prototype.push.apply(out, docs);
@@ -145,43 +149,74 @@ function innerRenderXmlNode(indent, node, lastNode, summary, examples, maxColumn
 
 /**
  * @param {string} text
- */
-function tokenizeNoBreakLinks(text) {
-  const links = [];1
-  // Don't wrap simple links with spaces.
-  text = text.replace(/\[[^\]]+\]/g, match => {
-    links.push(match);
-    return `[${links.length - 1}]`;
-  });
-  return text.split(' ').map(c => c.replace(/\[(\d+)\]/g, (_, p1) => links[+p1]));
-}
-
-/**
- * @param {string} text
  * @param {number=} maxColumns
  * @param {string=} prefix
  */
 function wrapText(text, maxColumns = 0, prefix = '') {
-  if (!maxColumns)
+  if (!maxColumns) {
     return prefix + text;
-  if (text.trim().startsWith('|'))
-    return prefix + text;
-  const indent = ' '.repeat(prefix.length);
+  }
+
   const lines = [];
-  maxColumns -= indent.length;
-  const words =  tokenizeNoBreakLinks(text);
-  let line = '';
-  for (const word of words) {
-    if (line.length && line.length + word.length < maxColumns) {
-      line += ' ' + word;
+
+  let insideTag = false;
+  let escapeChar = false;
+  let insideLink = false;
+  let breakOnSpace = false;
+
+  let line = "";
+  let currentWidth = 0;
+
+  let prevChar = '';
+  for (let i = 0; i < text.length; i++) {
+    const char = text.charAt(i);
+    let skipThisChar = true;
+
+    if (['<', '['].includes(char)) {
+      insideTag = true;
+    } else if (['>', ']'].includes(char)) {
+      insideTag = false;
+    } else if (char === '(' && prevChar === ']') {
+      insideLink = true;
+    } else if (char === ')' && insideLink) {
+      insideLink = false;
+    } else if (char === `\\`) {
+      escapeChar = true;
+    } else if (char === " " && breakOnSpace) {
+      breakOnSpace = false;
+      lines.push(line);
+      line = "";
+      currentWidth = 0;
+      continue;
     } else {
-      if (line)
-        lines.push(line);
-      line = (lines.length ? indent : prefix) + word;
+      skipThisChar = false;
+    }
+
+    if(currentWidth == 0 && char === " ") {
+      continue;
+    }
+
+    line += char;
+    currentWidth++;
+
+    prevChar = char;
+    if (skipThisChar) {
+      continue;
+    }
+
+    if (currentWidth >= maxColumns
+      && !insideTag
+      && !escapeChar
+      && !insideLink) {
+        breakOnSpace = true;
     }
   }
-  if (line)
+
+  // make sure we push the last line, if it hasn't been pushed yet
+  if(line !== "") {
     lines.push(line);
+  }
+
   return lines;
 }
 
