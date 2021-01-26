@@ -27,6 +27,8 @@ const { render } = require('../markdown');
 
 const maxDocumentationColumnWidth = 120;
 
+/** @type {Map<string, Documentation.Type>} */
+const additionalTypes = new Map(); // this will hold types that we discover, because of .NET specifics, like results
 let documentation;
 
 {
@@ -77,6 +79,24 @@ let documentation;
 
     out.push('}');
 
+
+    let content = template.replace('[CONTENT]', out.join("\n\t"));
+    fs.writeFileSync(`../generate_types/csharp/${name}.cs`, content);
+  });
+
+  // go over the additional types that we registered in the process
+  additionalTypes.forEach((type, name) => {
+    console.log(`Generating ${name}`);
+
+    const out = [];
+
+    out.push(`public class ${name}`);
+    out.push(`{`);
+
+    const properties = generateProperties(type);
+    out.push(...properties);
+
+    out.push(`}`);
 
     let content = template.replace('[CONTENT]', out.join("\n\t"));
     fs.writeFileSync(`../generate_types/csharp/${name}.cs`, content);
@@ -323,7 +343,30 @@ function generateReturnType(member) {
   if (innerReturnType && innerReturnType.startsWith('Object')) {
     // if the return type is an Object, we should generate a new one where the name is a combination of
     // the onwer class, method and Result, i.e. [Accessibility][Snapshot][Result].  
-    innerReturnType = innerReturnType.replace('Object', `${member.clazz.name}${translateMemberName('', member.name, null)}Result`);
+    const typeName = `${member.clazz.name}${translateMemberName('', member.name, null)}Result`;
+    innerReturnType = innerReturnType.replace('Object', typeName);
+    // we need to register
+    if (member.type.name === 'union') {
+      if (member.type.union[0].name === 'null') {
+        additionalTypes.set(typeName, member.type.union[1]);
+      } else {
+        console.log(`Not sure what to do here. Investigate: ${typeName} with ${member.type.union[0].name}`);
+      }
+    } else {
+      additionalTypes.set(typeName, member.type);
+    }
+  }
+
+  return innerReturnType;
+}
+
+function generateParamType(member) {
+  let innerReturnType = translateType(member.type);
+
+  if (innerReturnType && innerReturnType.startsWith('Object')) {
+    // if the return type is an Object, we should generate a new one where the name is a combination of
+    // the onwer class, method and Result, i.e. [Accessibility][Snapshot][Result].  
+    innerReturnType = innerReturnType.replace('Object', `${member.clazz.name}${translateMemberName('', member.name, null)}`);
   }
 
   return innerReturnType;
@@ -353,14 +396,12 @@ function generateMembers(member) {
       if (arg.type.name !== "options") {
         if (arg.type.properties) {
           arg.type.properties.forEach(opt => {
-            out.push(`// ---- ${opt.alias || opt.type.name} ${opt.name}`);
+            out.push(`// ---- ${translateType(opt.type)} ${opt.name}`);
           });
         }
       } else {
         out.push(`// ${arg.alias || arg.type.name} ${arg.name}`);
       }
-      // console.log(arg);
-      // console.log(arg.spec);
     });
 
     out.push(`${returnType} ${name}();`);
@@ -375,6 +416,27 @@ function generateMembers(member) {
     let eventType = event.type.name !== 'void' ? `EventHandler<${event.type.name}>` : `EventHandler`;
     out.push(`public event ${eventType} ${translateMemberName(event.kind, event.name, event)};`);
     out.push(''); // we want an empty line in between
+  });
+
+  return out.map(e => `\t${e}`);
+}
+
+/** @param {Documentation.Type} type */
+function generateProperties(type) {
+  const out = [];
+
+  if (!type.properties) {
+    return out;
+  }
+
+  type.properties.forEach(property => {
+    if (out.length > 0) {
+      out.push(``);
+    }
+
+    out.push(...renderXmlDoc(property.spec, maxDocumentationColumnWidth));
+    const name = translateMemberName('property', property.name, null);
+    out.push(`public object ${name} { get; set; }`)
   });
 
   return out.map(e => `\t${e}`);
