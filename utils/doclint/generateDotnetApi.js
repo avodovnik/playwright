@@ -18,13 +18,13 @@
 
 const path = require('path');
 const Documentation = require('./documentation');
+const XmlDoc = require('./xmlDocumentation')
 const PROJECT_DIR = path.join(__dirname, '..', '..');
 const fs = require('fs');
 const { parseApi } = require('./api_parser');
-// const { render } = require('../markdown'); // TODO: consider using this instead of manual parsing
+// const { visitAll } = require('../markdown'); // TODO: consider using this instead of manual parsing
 
 const maxDocumentationColumnWidth = 120;
-const pathToOutput = '../generate_types/csharp/';
 
 /** @type {Map<string, Documentation.Type>} */
 const additionalTypes = new Map(); // this will hold types that we discover, because of .NET specifics, like results
@@ -34,10 +34,10 @@ const enumTypes = new Map();
 let documentation;
 
 {
-  const typesDir = path.join(PROJECT_DIR, 'types');
+  const typesDir = '../generate_types/csharp/';
   if (!fs.existsSync(typesDir))
     fs.mkdirSync(typesDir)
-  // writeFile(path.join(typesDir, 'protocol.d.ts'), fs.readFileSync(path.join(PROJECT_DIR, 'src', 'server', 'chromium', 'protocol.ts'), 'utf8'));
+  
   documentation = parseApi(path.join(PROJECT_DIR, 'docs', 'src', 'api'));
   documentation.filterForLanguage('csharp');
   documentation.copyDocsFromSuperclasses([]);
@@ -70,7 +70,7 @@ let documentation;
     let name = translateMemberName('interface', element.name, undefined);
 
     // documentation.renderLinksInText(element.spec);
-    let docs = renderXmlDoc(element.spec, maxDocumentationColumnWidth);
+    let docs = XmlDoc.renderXmlDoc(element.spec, maxDocumentationColumnWidth);
 
     Array.prototype.push.apply(out, docs);
 
@@ -78,14 +78,13 @@ let documentation;
     out.push('{');
 
     const members = generateMembers(element);
-    // generate the members
     out.push(...members);
 
     out.push('}');
 
 
     let content = template.replace('[CONTENT]', out.join("\n\t"));
-    fs.writeFileSync(`${pathToOutput}${name}.cs`, content);
+    fs.writeFileSync(`${typesDir}${name}.cs`, content);
   });
 
   // go over the additional types that we registered in the process
@@ -104,7 +103,7 @@ let documentation;
     out.push(`}`);
 
     let content = template.replace('[CONTENT]', out.join("\n\t"));
-    fs.writeFileSync(`${pathToOutput}${name}.cs`, content);
+    fs.writeFileSync(`${typesDir}${name}.cs`, content);
   });
 
   enumTypes.forEach((values, enumName) => {
@@ -122,7 +121,7 @@ let documentation;
     out.push(`}`);
 
     let content = template.replace('[CONTENT]', out.join("\n\t"));
-    fs.writeFileSync(`${pathToOutput}${enumName}.cs`, content);
+    fs.writeFileSync(`${typesDir}${enumName}.cs`, content);
   });
 }
 
@@ -261,7 +260,7 @@ function generateMembers(member) {
       returnType = `Task<${generateReturnType(method)}>`;
     }
 
-    out.push(...renderXmlDoc(method.spec, maxDocumentationColumnWidth));
+    out.push(...XmlDoc.renderXmlDoc(method.spec, maxDocumentationColumnWidth));
 
     method.argsArray.forEach(arg => {
       if (arg.type.name !== "options") {
@@ -282,7 +281,7 @@ function generateMembers(member) {
   /**** EVENTS  ****/
   member.eventsArray.forEach(event => {
 
-    out.push(...renderXmlDoc(event.spec, maxDocumentationColumnWidth));
+    out.push(...XmlDoc.renderXmlDoc(event.spec, maxDocumentationColumnWidth));
 
     let eventType = event.type.name !== 'void' ? `EventHandler<${event.type.name}>` : `EventHandler`;
     out.push(`public event ${eventType} ${translateMemberName(event.kind, event.name, event)};`);
@@ -307,7 +306,7 @@ function generateProperties(type) {
 
     const name = translateMemberName('property', property.name, null);
 
-    const docs = renderXmlDoc(property.spec, maxDocumentationColumnWidth);
+    const docs = XmlDoc.renderXmlDoc(property.spec, maxDocumentationColumnWidth);
     if (property.type.union && property.type.union[0].name !== "null" && !property.type.union[1].name.startsWith('"')) {
       // we need to actually split this into multiple properties
       property.type.union.forEach(unionType => {
@@ -321,180 +320,4 @@ function generateProperties(type) {
   });
 
   return out.map(e => `\t${e}`);
-}
-
-/** Documentation (XMLDOC) rendering */
-
-/**
- * @param {Documentation.MarkdownNode[]} nodes
- * @param {number=} maxColumns
- */
-function renderXmlDoc(nodes, maxColumns) {
-  const summary = [];
-  const examples = [];
-  let lastNode;
-
-  summary.push('<summary>');
-  for (let node of nodes) {
-    lastNode = innerRenderXmlNode(node, lastNode, summary, examples, maxColumns);
-  }
-
-  if (summary.length == 1) { // just the <summary> node 
-    return [];
-  }
-
-  // we might have a stray list, if the <li> is the last element
-  if (lastNode && lastNode.type === 'li') {
-    summary.push('</list>');
-  }
-  summary.push('</summary>');
-
-  // add examples
-  summary.push(...examples);
-  return summary.map(n => `/// ${n}`);
-}
-
-/**
- * @param {Documentation.MarkdownNode} node
- * @param {Documentation.MarkdownNode} lastNode
- * @param {number=} maxColumns
- * @param {string[]} summary
- * @param {string[]} examples
- */
-function innerRenderXmlNode(node, lastNode, summary, examples, maxColumns) {
-  /** @param {string[]} a */
-  const newLine = (a) => {
-    if (a[a.length - 1] !== '')
-      a.push('');
-  };
-
-  let escapedText = node.text;
-  // resolve links (within [])
-
-  if (node.type === 'text') {
-    // clear up the list, if there was one
-    if (lastNode && lastNode.type === 'li') {
-      summary.push('</list>');
-    }
-
-    summary.push(...wrapText(escapedText, maxColumns));
-
-    return node;
-  }
-
-  if (node.type === 'li') {
-    if (escapedText.startsWith('extends: ')) {
-      summary.push(...wrapText(`<seealso cref="${escapedText.substring(9)}"/>`, maxColumns));
-      return undefined;
-    }
-
-    // if the previous node was not li, start list
-    if (lastNode && lastNode.type !== 'li') {
-      summary.push(`<list>`);
-    }
-
-    summary.push(...wrapText(`<item><description>${escapedText}</description></item>`, maxColumns));
-  }
-
-  // TODO: this should really move to the examples array
-  if (node.type == 'code' && node.codeLang == "csharp") {
-    summary.push('<![CDATA[');
-    summary.push(...node.lines);
-    summary.push(']]>');
-  }
-
-  return node;
-}
-
-/**
- * @param {string} text
- * @param {number=} maxColumns
- * @param {string=} prefix
- */
-function wrapText(text, maxColumns = 0, prefix = '') {
-  if (!maxColumns) {
-    return prefix + text;
-  }
-
-  // we'll apply some fixes, like rendering the links from markdown
-  // TODO: maybe we can move this to either markdown.js or documentation.js?
-  text = text.replace(/\[([^\[\]]*)\]\((.*?)\)/g, function (match, name, url) {
-    return `<a href="${url}">${name}</a>`;
-  });
-
-  const lines = [];
-
-  let insideTag = false;
-  let escapeChar = false;
-  let insideLink = false;
-  let breakOnSpace = false;
-  let insideNode = false;
-
-  let line = "";
-  let currentWidth = 0;
-
-  let prevChar = '';
-  for (let i = 0; i < text.length; i++) {
-    const char = text.charAt(i);
-    let skipThisChar = true;
-
-    if (['<', '['].includes(char)) {
-      // maybe we should break if a node starts, and we're almost at the end of the block
-      if (!insideNode && currentWidth >= maxColumns * 0.85) {
-        lines.push(line);
-        line = "";
-        currentWidth = 0;
-      }
-      insideNode = true;
-      insideTag = true;
-    } else if (['>', ']'].includes(char)) {
-      insideTag = false;
-      if (prevChar === '/') { // self-closing tag
-        insideNode = false;
-      }
-    } else if (char === '/' && prevChar === '<') { // closing node
-      insideNode = false;
-    } else if (char === '(' && prevChar === ']') {
-      insideLink = true;
-    } else if (char === ')' && insideLink) {
-      insideLink = false;
-    } else if (char === `\\`) {
-      escapeChar = true;
-    } else if (char === " " && breakOnSpace) {
-      breakOnSpace = false;
-      lines.push(line);
-      line = "";
-      currentWidth = 0;
-      continue;
-    } else {
-      skipThisChar = false;
-    }
-
-    if (currentWidth == 0 && char === " ") {
-      continue;
-    }
-
-    line += char;
-    currentWidth++;
-
-    prevChar = char;
-    if (skipThisChar) {
-      continue;
-    }
-
-    if (currentWidth >= maxColumns
-      && !insideTag
-      && !escapeChar
-      && !insideLink
-      && !insideNode) {
-      breakOnSpace = true;
-    }
-  }
-
-  // make sure we push the last line, if it hasn't been pushed yet
-  if (line !== "") {
-    lines.push(line);
-  }
-
-  return lines;
 }
