@@ -34,10 +34,11 @@ const enumTypes = new Map();
 let documentation;
 
 {
-  const typesDir = '../generate_types/csharp/';
+  const typesDir = process.argv[2] || '../generate_types/csharp/';
+  console.log(typesDir);
   if (!fs.existsSync(typesDir))
     fs.mkdirSync(typesDir)
-  
+
   documentation = parseApi(path.join(PROJECT_DIR, 'docs', 'src', 'api'));
   documentation.filterForLanguage('csharp');
   documentation.copyDocsFromSuperclasses([]);
@@ -84,7 +85,7 @@ let documentation;
 
 
     let content = template.replace('[CONTENT]', out.join("\n\t"));
-    fs.writeFileSync(`${typesDir}${name}.cs`, content);
+    fs.writeFileSync(`${path.join(typesDir, name)}.cs`, content);
   });
 
   // go over the additional types that we registered in the process
@@ -103,7 +104,7 @@ let documentation;
     out.push(`}`);
 
     let content = template.replace('[CONTENT]', out.join("\n\t"));
-    fs.writeFileSync(`${typesDir}${name}.cs`, content);
+    fs.writeFileSync(`${path.join(typesDir, name)}.cs`, content);
   });
 
   enumTypes.forEach((values, enumName) => {
@@ -121,7 +122,7 @@ let documentation;
     out.push(`}`);
 
     let content = template.replace('[CONTENT]', out.join("\n\t"));
-    fs.writeFileSync(`${typesDir}${enumName}.cs`, content);
+    fs.writeFileSync(`${path.join(typesDir, enumName)}.cs`, content);
   });
 }
 
@@ -147,6 +148,8 @@ function translateMemberName(memberKind, name, member) {
       return `${assumedName}Async`;
     case "event":
       return `On${assumedName}`;
+    case "enum":
+      return `${assumedName}`;
     default:
       return `${assumedName}`;
   }
@@ -154,20 +157,15 @@ function translateMemberName(memberKind, name, member) {
 
 /**
  *  @param {Documentation.Type} type 
+ *  @param {Documentation.Member} parent
  *  @returns {string}
  * */
-function translateType(type) {
+function translateType(type, parent) {
   if (type.union) {
-
-    // we have some predetermined unions that we can map to "smarter" objects
-    if (type.union[0].name === 'boolean' && type.union[1].name === '"mixed"') {
-      return "MixedState";
-    }
-
     if (type.union[0].name === 'null') {
       // for dotnet, this is a nullable type
       // unless it's something like a string
-      const typeName = translateType(type.union[1]);
+      const typeName = translateType(type.union[1], parent);
 
       if (typeName === 'string'
         || typeName === 'int') {
@@ -176,9 +174,7 @@ function translateType(type) {
 
       return `${typeName}?`;
     } else {
-      return translateAndRegisterUnion(type.union, (t) => {
-        return "Enum";
-      });
+      return translateAndRegisterUnion(type, parent);
     }
   }
 
@@ -196,11 +192,37 @@ function translateType(type) {
 }
 
 /**
- * @param {Documentation.Type[]} union
- * @param {function(Documentation.Type) : string} enumCallback
+ * A union in dotnet world, when it's a mix of strings only, maps to an enum. Otherwise, 
+ * it most likely maps to a nullable object (Union of null and object).
+ * @param {Documentation.Type} parentType
+ * @param {Documentation.Member} parentMember
  */
-function translateAndRegisterUnion(union, enumCallback) {
-  return `Union<${union.map(x => x.name).join(", ")}>`;
+function translateAndRegisterUnion(parentType, parentMember) {
+  let union = parentType.union;
+
+  // we have some predetermined unions that we can map to "smarter" objects
+  if (union.length == 2 && union[0].name === 'boolean' && union[1].name === '"mixed"') {
+    return "MixedState";
+  }
+
+  if (union.filter(x => x.name.startsWith('"')).length == union.length) { // this is an enum 
+    // check if there's an enum already registered with this name
+    let enumName = translateMemberName('enum', parentMember ? parentMember.name : `${parentType.name}`, null);
+    let potentialEnum = enumTypes.get(enumName);
+    if (!potentialEnum) {
+      enumTypes.set(enumName, union.map(x => x.name));
+    } else {
+      // we should double check the enum exists, and if it's not the same, we panic (merge?)
+      if (potentialEnum.join(',') !== [...union.map(u => u.name)].join(',')) {
+        throw "Enums have the same name, but not the same values.";
+      }
+    }
+
+    // return `Union<${union.map(x => x.name).join(", ")}>`;
+    return enumName;
+  }
+
+  return `SomethingSpecial<${union.map(u => u.name).join(', ')}>`;
 }
 
 /**
@@ -208,7 +230,7 @@ function translateAndRegisterUnion(union, enumCallback) {
  *    @returns {string}
 */
 function generateReturnType(member) {
-  let innerReturnType = translateType(member.type);
+  let innerReturnType = translateType(member.type, member);
 
   if (innerReturnType && innerReturnType.startsWith('Object')) {
     // if the return type is an Object, we should generate a new one where the name is a combination of
@@ -231,7 +253,7 @@ function generateReturnType(member) {
 }
 
 function generateParamType(member) {
-  let innerReturnType = translateType(member.type);
+  let innerReturnType = translateType(member.type, member);
 
   if (innerReturnType && innerReturnType.startsWith('Object')) {
     // if the return type is an Object, we should generate a new one where the name is a combination of
@@ -266,7 +288,7 @@ function generateMembers(member) {
       if (arg.type.name !== "options") {
         if (arg.type.properties) {
           arg.type.properties.forEach(opt => {
-            out.push(`// ---- ${translateType(opt.type)} ${opt.name}`);
+            out.push(`// ---- ${translateType(opt.type, opt)} ${opt.name}`);
           });
         }
       } else {
@@ -311,11 +333,11 @@ function generateProperties(type) {
       // we need to actually split this into multiple properties
       property.type.union.forEach(unionType => {
         out.push(...docs);
-        out.push(`public ${translateType(unionType)} ${name}As${translateMemberName('union', unionType.name, null)} { get; set; }`)
+        out.push(`public ${translateType(unionType, property)} ${name}As${translateMemberName('union', unionType.name, null)} { get; set; }`)
       });
     } else {
       out.push(...docs);
-      out.push(`public ${translateType(property.type)} ${name} { get; set; }`)
+      out.push(`public ${translateType(property.type, property)} ${name} { get; set; }`)
     }
   });
 
