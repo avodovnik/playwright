@@ -131,7 +131,6 @@ let documentation;
  * @param {string} name 
  * @param {Documentation.Member} member */
 function translateMemberName(memberKind, name, member) {
-
   // check if there's an alias in the docs, in which case
   // we return that, otherwise, we apply our dotnet magic to it
   if (member) {
@@ -176,15 +175,24 @@ function translateType(type, parent) {
     } else {
       return translateAndRegisterUnion(type, parent);
     }
+  } 
+
+  if (type.name === 'Array') {
+    return `${type.templates[0].name}[]`;
+  }
+
+  if (type.templates) {
+    if (type.templates.length == 2 && type.templates[0].name === "string" && type.templates[1].name === "string") {
+      return "IList<KeyValuePair<string, string>>";
+    }
+    console.log(`${parent.name}:`);
+    console.log(type.templates);
+    return "AAAARRRGH";
   }
 
   // apply some basic rules
   if (type.name === 'boolean') {
     return 'bool';
-  }
-
-  if (type.name === 'Array') {
-    return `${type.templates[0].name}[]`;
   }
 
   /** @param {string} */
@@ -222,7 +230,8 @@ function translateAndRegisterUnion(parentType, parentMember) {
     return enumName;
   }
 
-  return `SomethingSpecial<${union.map(u => u.name).join(', ')}>`;
+  //return `SomethingSpecial<${union.map(u => u.name).join(', ')}>`;
+  return null;
 }
 
 /**
@@ -252,18 +261,6 @@ function generateReturnType(member) {
   return innerReturnType;
 }
 
-function generateParamType(member) {
-  let innerReturnType = translateType(member.type, member);
-
-  if (innerReturnType && innerReturnType.startsWith('Object')) {
-    // if the return type is an Object, we should generate a new one where the name is a combination of
-    // the onwer class, method and Result, i.e. [Accessibility][Snapshot][Result].  
-    innerReturnType = innerReturnType.replace('Object', `${member.clazz.name}${translateMemberName('', member.name, null)}`);
-  }
-
-  return innerReturnType;
-}
-
 /** @param {Documentation.Class} member */
 function generateMembers(member) {
   const out = [];
@@ -288,7 +285,8 @@ function generateMembers(member) {
       if (arg.type.name !== "options") {
         if (arg.type.properties) {
           arg.type.properties.forEach(opt => {
-            out.push(`// ---- ${translateType(opt.type, opt)} ${opt.name}`);
+            let paramType = translateType(opt.type, opt);
+            out.push(`// ---- ${paramType} ${opt.name}`);
           });
         }
       } else {
