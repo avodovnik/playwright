@@ -56,34 +56,34 @@ ElementHandle prevents DOM element from garbage collection unless the handle is 
 
 ElementHandle instances can be used as an argument in [`method: Page.$eval`] and [`method: Page.evaluate`] methods.
 
-## async method: ElementHandle.$
+## async method: ElementHandle.querySelector
 * langs:
   - alias-python: query_selector
-  - alias-csharp: QuerySelectorAsync
+  - alias-js: $
 - returns: <[null]|[ElementHandle]>
 
 The method finds an element matching the specified selector in the `ElementHandle`'s subtree. See
 [Working with selectors](./selectors.md) for more details. If no elements match the selector,
 returns `null`.
 
-### param: ElementHandle.$.selector = %%-query-selector-%%
+### param: ElementHandle.querySelector.selector = %%-query-selector-%%
 
-## async method: ElementHandle.$$
+## async method: ElementHandle.querySelectorAll
 * langs:
   - alias-python: query_selector_all
-  - alias-csharp: QuerySelectorAllAsync
+  - alias-js: $$
 - returns: <[Array]<[ElementHandle]>>
 
 The method finds all elements matching the specified selector in the `ElementHandle`s subtree. See
 [Working with selectors](./selectors.md) for more details. If no elements match the selector,
 returns empty array.
 
-### param: ElementHandle.$$.selector = %%-query-selector-%%
+### param: ElementHandle.querySelectorAll.selector = %%-query-selector-%%
 
-## async method: ElementHandle.$eval
+## async method: ElementHandle.evalOnSelector
 * langs:
   - alias-python: eval_on_selector
-  - alias-csharp: EvalOnSelectorAsync
+  - alias-js: $eval
 - returns: <[Serializable]>
 
 Returns the return value of [`param: pageFunction`]
@@ -115,23 +115,23 @@ assert tweet_handle.eval_on_selector(".like", "node => node.innerText") == "100"
 assert tweet_handle.eval_on_selector(".retweets", "node => node.innerText") = "10"
 ```
 
-### param: ElementHandle.$eval.selector = %%-query-selector-%%
+### param: ElementHandle.evalOnSelector.selector = %%-query-selector-%%
 
-### param: ElementHandle.$eval.pageFunction
+### param: ElementHandle.evalOnSelector.pageFunction
 * langs: js
 - `pageFunction` <[function]\([Element]\)>
 
 Function to be evaluated in browser context
 
-### param: ElementHandle.$eval.arg
+### param: ElementHandle.evalOnSelector.arg
 - `arg` <[EvaluationArgument]>
 
 Optional argument to pass to [`param: pageFunction`]
 
-## async method: ElementHandle.$$eval
+## async method: ElementHandle.evalOnSelectorAll
 * langs:
   - alias-python: eval_on_selector_all
-  - alias-csharp: EvalOnSelectorAllAsync
+  - alias-js: $$eval
 - returns: <[Serializable]>
 
 Returns the return value of [`param: pageFunction`]
@@ -167,15 +167,15 @@ feed_handle = page.query_selector(".feed")
 assert feed_handle.eval_on_selector_all(".tweet", "nodes => nodes.map(n => n.innerText)") == ["hello!", "hi!"]
 ```
 
-### param: ElementHandle.$$eval.selector = %%-query-selector-%%
+### param: ElementHandle.evalOnSelectorAll.selector = %%-query-selector-%%
 
-### param: ElementHandle.$$eval.pageFunction
+### param: ElementHandle.evalOnSelectorAll.pageFunction
 * langs: js
 - `pageFunction` <[function]\([Array]<[Element]>\)>
 
 Function to be evaluated in browser context
 
-### param: ElementHandle.$$eval.arg
+### param: ElementHandle.evalOnSelectorAll.arg
 - `arg` <[EvaluationArgument]>
 
 Optional argument to pass to [`param: pageFunction`]

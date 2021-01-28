@@ -323,10 +323,10 @@ Emitted when <[WebSocket]> request is sent.
 Emitted when a dedicated [WebWorker](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API) is spawned by the
 page.
 
-## async method: Page.$
+## async method: Page.querySelector
 * langs:
   - alias-python: query_selector
-  - alias-csharp: QuerySelectorAsync
+  - alias-js: $
 - returns: <[null]|[ElementHandle]>
 
 The method finds an element matching the specified selector within the page. If no elements match the selector, the
@@ -334,12 +334,12 @@ return value resolves to `null`.
 
 Shortcut for main frame's [`method: Frame.$`].
 
-### param: Page.$.selector = %%-query-selector-%%
+### param: Page.querySelector.selector = %%-query-selector-%%
 
-## async method: Page.$$
+## async method: Page.querySelectorAll
 * langs:
   - alias-python: query_selector_all
-  - alias-csharp: QuerySelectorAllAsync
+  - alias-js: $$
 - returns: <[Array]<[ElementHandle]>>
 
 The method finds all elements matching the specified selector within the page. If no elements match the selector, the
@@ -347,12 +347,12 @@ return value resolves to `[]`.
 
 Shortcut for main frame's [`method: Frame.$$`].
 
-### param: Page.$$.selector = %%-query-selector-%%
+### param: Page.querySelectorAll.selector = %%-query-selector-%%
 
-## async method: Page.$eval
+## async method: Page.evalOnSelector
 * langs:
   - alias-python: eval_on_selector
-  - alias-csharp: EvalOnSelectorAsync
+  - alias-js: $eval
 - returns: <[Serializable]>
 
 The method finds an element matching the specified selector within the page and passes it as a first argument to
@@ -384,23 +384,23 @@ html = page.eval_on_selector(".main-container", "(e, suffix) => e.outer_html + s
 
 Shortcut for main frame's [`method: Frame.$eval`].
 
-### param: Page.$eval.selector = %%-query-selector-%%
+### param: Page.evalOnSelector.selector = %%-query-selector-%%
 
-### param: Page.$eval.pageFunction
+### param: Page.evalOnSelector.pageFunction
 * langs: js
 - `pageFunction` <[function]\([Element]\)>
 
 Function to be evaluated in browser context
 
-### param: Page.$eval.arg
+### param: Page.evalOnSelector.arg
 - `arg` <[EvaluationArgument]>
 
 Optional argument to pass to [`param: pageFunction`]
 
-## async method: Page.$$eval
+## async method: Page.evalOnSelectorAll
 * langs:
   - alias-python: eval_on_selector_all
-  - alias-csharp: EvalOnSelectorAllAsync
+  - alias-js: $$eval
 - returns: <[Serializable]>
 
 The method finds all elements matching the specified selector within the page and passes an array of matched elements as
@@ -423,15 +423,15 @@ div_counts = await page.eval_on_selector_all("div", "(divs, min) => divs.length 
 div_counts = page.eval_on_selector_all("div", "(divs, min) => divs.length >= min", 10)
 ```
 
-### param: Page.$$eval.selector = %%-query-selector-%%
+### param: Page.evalOnSelectorAll.selector = %%-query-selector-%%
 
-### param: Page.$$eval.pageFunction
+### param: Page.evalOnSelectorAll.pageFunction
 * langs: js
 - `pageFunction` <[function]\([Array]<[Element]>\)>
 
 Function to be evaluated in browser context
 
-### param: Page.$$eval.arg
+### param: Page.evalOnSelectorAll.arg
 - `arg` <[EvaluationArgument]>
 
 Optional argument to pass to [`param: pageFunction`]
