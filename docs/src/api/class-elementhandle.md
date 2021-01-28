@@ -1,7 +1,7 @@
 # class: ElementHandle
 * extends: [JSHandle]
 
-ElementHandle represents an in-page DOM element. ElementHandles can be created with the [`method: Page.$`] method.
+ElementHandle represents an in-page DOM element. ElementHandles can be created with the [`method: Page.querySelector`] method.
 
 ```js
 const { chromium } = require('playwright');  // Or 'firefox' or 'webkit'.
@@ -54,7 +54,7 @@ with sync_playwright() as playwright:
 ElementHandle prevents DOM element from garbage collection unless the handle is disposed with
 [`method: JSHandle.dispose`]. ElementHandles are auto-disposed when their origin frame gets navigated.
 
-ElementHandle instances can be used as an argument in [`method: Page.$eval`] and [`method: Page.evaluate`] methods.
+ElementHandle instances can be used as an argument in [`method: Page.evalOnSelector`] and [`method: Page.evaluate`] methods.
 
 ## async method: ElementHandle.querySelector
 * langs:
@@ -92,7 +92,7 @@ The method finds an element matching the specified selector in the `ElementHandl
 argument to [`param: pageFunction`]. See [Working with selectors](./selectors.md) for more
 details. If no elements match the selector, the method throws an error.
 
-If [`param: pageFunction`] returns a [Promise], then `frame.$eval` would wait for the promise to resolve and return its
+If [`param: pageFunction`] returns a [Promise], then `frame.evalOnSelector` would wait for the promise to resolve and return its
 value.
 
 Examples:
@@ -140,7 +140,7 @@ The method finds all elements matching the specified selector in the `ElementHan
 matched elements as a first argument to [`param: pageFunction`]. See
 [Working with selectors](./selectors.md) for more details.
 
-If [`param: pageFunction`] returns a [Promise], then `frame.$$eval` would wait for the promise to resolve and return its
+If [`param: pageFunction`] returns a [Promise], then `frame.evalOnSelectorAll` would wait for the promise to resolve and return its
 value.
 
 Examples:

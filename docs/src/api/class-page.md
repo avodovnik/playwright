@@ -332,7 +332,7 @@ page.
 The method finds an element matching the specified selector within the page. If no elements match the selector, the
 return value resolves to `null`.
 
-Shortcut for main frame's [`method: Frame.$`].
+Shortcut for main frame's [`method: Frame.querySelector`].
 
 ### param: Page.querySelector.selector = %%-query-selector-%%
 
@@ -345,7 +345,7 @@ Shortcut for main frame's [`method: Frame.$`].
 The method finds all elements matching the specified selector within the page. If no elements match the selector, the
 return value resolves to `[]`.
 
-Shortcut for main frame's [`method: Frame.$$`].
+Shortcut for main frame's [`method: Frame.querySelectorAll`].
 
 ### param: Page.querySelectorAll.selector = %%-query-selector-%%
 
@@ -359,7 +359,7 @@ The method finds an element matching the specified selector within the page and 
 [`param: pageFunction`]. If no elements match the selector, the method throws an error. Returns the value of
 [`param: pageFunction`].
 
-If [`param: pageFunction`] returns a [Promise], then [`method: Page.$eval`] would wait for the promise to resolve and
+If [`param: pageFunction`] returns a [Promise], then [`method: Page.evalOnSelector`] would wait for the promise to resolve and
 return its value.
 
 Examples:
@@ -382,7 +382,7 @@ preload_href = page.eval_on_selector("link[rel=preload]", "el => el.href")
 html = page.eval_on_selector(".main-container", "(e, suffix) => e.outer_html + suffix", "hello")
 ```
 
-Shortcut for main frame's [`method: Frame.$eval`].
+Shortcut for main frame's [`method: Frame.evalOnSelector`].
 
 ### param: Page.evalOnSelector.selector = %%-query-selector-%%
 
@@ -406,7 +406,7 @@ Optional argument to pass to [`param: pageFunction`]
 The method finds all elements matching the specified selector within the page and passes an array of matched elements as
 a first argument to [`param: pageFunction`]. Returns the result of [`param: pageFunction`] invocation.
 
-If [`param: pageFunction`] returns a [Promise], then [`method: Page.$$eval`] would wait for the promise to resolve and
+If [`param: pageFunction`] returns a [Promise], then [`method: Page.evalOnSelectorAll`] would wait for the promise to resolve and
 return its value.
 
 Examples:
