@@ -22,6 +22,8 @@ const XmlDoc = require('./xmlDocumentation')
 const PROJECT_DIR = path.join(__dirname, '..', '..');
 const fs = require('fs');
 const { parseApi } = require('./api_parser');
+const { type } = require('os');
+const { check } = require('proper-lockfile');
 // const { visitAll } = require('../markdown'); // TODO: consider using this instead of manual parsing
 
 const maxDocumentationColumnWidth = 120;
@@ -37,9 +39,17 @@ let classNameMap;
 
 {
   const typesDir = process.argv[2] || '../generate_types/csharp/';
-  console.log(typesDir);
-  if (!fs.existsSync(typesDir))
-    fs.mkdirSync(typesDir)
+  let checkAndMakeDir = (path) => {
+    if (!fs.existsSync(path))
+      fs.mkdirSync(path)
+  };
+
+  const modelsDir = path.join(typesDir, "models");
+  const enumsDir = path.join(typesDir, "enums");
+
+  checkAndMakeDir(typesDir);
+  checkAndMakeDir(modelsDir);
+  checkAndMakeDir(enumsDir);
 
   documentation = parseApi(path.join(PROJECT_DIR, 'docs', 'src', 'api'));
   documentation.filterForLanguage('csharp');
@@ -68,9 +78,9 @@ let classNameMap;
   // let name = translateMemberName('interface', element.name, undefined);
   classNameMap = new Map(documentation.classesArray.map(x => [x.name, translateMemberName('interface', x.name, null)]));
 
-  let writeFile = (name, out) => {
+  let writeFile = (name, out, folder) => {
     let content = template.replace('[CONTENT]', out.join("\n\t"));
-    fs.writeFileSync(`${path.join(typesDir, name)}.cs`, content);
+    fs.writeFileSync(`${path.join(folder, name)}.cs`, content);
   }
 
   /**
@@ -79,12 +89,14 @@ let classNameMap;
    * @param {string} name 
    * @param {Documentation.MarkdownNode[]} spec
    * @param {Function} callback 
+   * @param {string} folder
    */
-  let innerRenderElement = (kind, name, spec, callback) => {
+  let innerRenderElement = (kind, name, spec, callback, folder = typesDir) => {
     const out = [];
     console.log(`Generating ${name}`);
 
-    out.push(...XmlDoc.renderXmlDoc(spec, maxDocumentationColumnWidth));
+    if (spec)
+      out.push(...XmlDoc.renderXmlDoc(spec, maxDocumentationColumnWidth));
     out.push(`public ${kind} ${name}`);
     out.push('{');
 
@@ -92,7 +104,7 @@ let classNameMap;
 
     out.push('}');
 
-    writeFile(name, out);
+    writeFile(name, out, folder);
   };
 
   for (const element of documentation.classesArray) {
@@ -104,8 +116,8 @@ let classNameMap;
     });
   }
 
-  additionalTypes.forEach((type, name) => {
-    innerRenderElement('class', name, [], (out) => {
+  additionalTypes.forEach((type, name) =>
+    innerRenderElement('class', name, null, (out) => {
 
       // TODO: consider how this could be merged with the `translateType` check
       if (type.union
@@ -122,56 +134,32 @@ let classNameMap;
         }
       } else {
         console.log(type);
-        out.push(`// HEEELP`);
+        throw `Not sure what to do in this case.`;
       }
-    });
-  });
+    }, modelsDir));
 
-  // // go over the additional types that we registered in the process
-  // additionalTypes.forEach((type, name) => {
-  //   console.log(`Generating ${name}`);
+  enumTypes.forEach((values, name) =>
+    innerRenderElement('enum', name, null, (out) => {
+      values.forEach((v, i) => {
+        // strip out the quotes
+        v = v.replace(/[\"]/g, ``)
+        let escapedName = v.replace(/[-]/g, ' ')
+          .split(' ')
+          .map(word => word[0].toUpperCase() + word.substring(1)).join('');
 
-  //   const out = [];
-
-  //   out.push(`public partial class ${name}`);
-  //   out.push(`{`);
-
-
-  //   const properties = type.name === 'Array' && type.templates ? generateProperties(type.templates[0]) : generateProperties(type);
-  //   out.push(...properties);
-
-  //   out.push(`}`);
-
-  //   let content = template.replace('[CONTENT]', out.join("\n\t"));
-  //   fs.writeFileSync(`${path.join(typesDir, name)}.cs`, content);
-  // });
-
-  // enumTypes.forEach((values, enumName) => {
-  //   console.log(`Generating ${enumName}`);
-
-  //   const out = [];
-
-  //   out.push(`public enum ${enumName}`);
-  //   out.push(`{`);
-
-  //   values.forEach(val => {
-  //     out.push(`\t${val},`);
-  //   });
-
-  //   out.push(`}`);
-
-  //   let content = template.replace('[CONTENT]', out.join("\n\t"));
-  //   fs.writeFileSync(`${path.join(typesDir, enumName)}.cs`, content);
-  // });
+        out.push(`\t[EnumMember(Value = "${v}")]`);
+        out.push(`\t${escapedName},`);
+      });
+    }, enumsDir));
 }
 
 /**
  * @param {string} memberKind  
  * @param {string} name 
  * @param {Documentation.Member} member */
-function translateMemberName(memberKind, name, member) {
+function translateMemberName(memberKind, name, member = null) {
   if (memberKind === 'argument') {
-    if (name === 'params') { // just in case we want to add others
+    if (['params', 'event'].includes(name)) { // just in case we want to add others
       return `@${name}`;
     } else {
       return name;
@@ -210,82 +198,166 @@ function translateMemberName(memberKind, name, member) {
  * @param {string[]} out
  */
 function renderMember(member, parent, out) {
-  let output = line => out.push(`\t${line}`);
+  let output = line => {
+    if (typeof (line) === 'string')
+      out.push(`\t${line}`);
+    else
+      out.push(...line);
+  }
+
   let name = translateMemberName(member.kind, member.name, member);
-  if (name === 'OnHeaders')
-    throw 'AAA';
-  let type = translateType(member.type, parent);
-
-  if (member.kind === 'event') {
-    if (!member.type)
-      throw `No Event Type for ${name} in ${parent.name}`;
-    // console.log(member.type);
-    output(`event EventHandler<${type}> ${name};`);
-  } else if (member.kind === 'property') {
-    output(`${type} ${name} { get; set; }`);
-    return
-  } else if (member.kind === 'method') {
-    // TODO: this is something that will probably go into the docs
-    if (member.args.size == 0
-      && type !== 'void'
-      && !name.startsWith('Is')) {
-      name = `Get${name}`;
-    }
-
-    // HACK: special case for generics handling!
-    if (type === 'T') {
-      name = `${name}<T>`;
-    }
-
-    // TODO: if the return method is an Object, we need to generate the object
-    if (type === 'Object') {
-      if (member.type.expression === '[Object]<[string], [string]>') {
-        type = `IEnumerable<KeyValuePair<string, string>>`;
-      } else if (!member.type.properties) {
-        type = `object`;
-      } else {
-        type = `${parent.name}${member.name}Result`;
-        additionalTypes.set(type, member.type);
-        console.log(`Registering additional type: ${type}...`);
-      }
-    }
-
-    // adjust the return type for async methods
-    if (member.async)
-      if (type === 'void')
-        type = `Task`;
-      else
-        type = `Task<${type}>`;
-
-    // render args
-    let args = [];
-    let parseArg = (/** @type {Documentation.Member} */ arg) => {
-      if (arg.name === "options") {
-        arg.type.properties.forEach(prop => {
-          parseArg(prop);
-        });
-        return;
-      }
-
-      const argType = translateType(arg.type, parent);
-      const argName = translateMemberName('argument', arg.name, null);
-
-      args.push(`${argType} ${argName}`);
-    };
-
-    member.args.forEach(parseArg);
-
-    output(`${type} ${name}(${args.join(', ')});`);
+  if (member.kind === 'method') {
+    renderMethod(member, parent, output, name);
   } else {
-    throw `Problem rendering a member: ${type} - ${name} (${member.kind})`; output(`// ${type} - ${name} (${member.kind})`);
+    let type = translateType(member.type, parent, (t) => generateNameDefault(member, name, t, parent));
+    if (member.kind === 'event') {
+      if (!member.type)
+        throw `No Event Type for ${name} in ${parent.name}`;
+      // console.log(member.type);
+      output(`event EventHandler<${type}> ${name};`);
+    } else if (member.kind === 'property') {
+      output(`${type} ${name} { get; set; }`);
+    } else {
+      throw `Problem rendering a member: ${type} - ${name} (${member.kind})`;
+    }
   }
 }
 
+/**
+ * 
+ * @param {Documentation.Member} member 
+ * @param {string} name 
+ * @param {Documentation.Type} t 
+ * @param {*} parent 
+ */
+function generateNameDefault(member, name, t, parent) {
+  // we'd get this call for enums, primarily
+  let enumName = generateEnumNameIfApplicable(member, name, t, parent);
+  if (!enumName && member) {
+    if (member.kind === 'method') {
+      // this should be easy to name... let's call it the same as the argument (eternal optimist)
+      let probableName = `${parent.name}${translateMemberName(``, name, null)}`;
+      let probableType = additionalTypes.get(probableName);
+      if (probableType) {
+        // compare it with what?
+        if (probableType.expression != t.expression) {
+          throw `Non-matching types with the same name. Panic.`;
+        }
+      } else {
+        additionalTypes.set(probableName, t);
+      }
+
+      return probableName;
+    }
+  }
+  return enumName || t.name;
+}
+
+function generateEnumNameIfApplicable(member, name, type, parent) {
+  if (!type.union || type.union.filter(u => u.name.startsWith(`"`)).length != type.union.length)
+    return null; // this isn't an enum, so we don't care, we let the caller generate the name
+
+  // our enum naming policy leaves a few bits to be desired, but it'll do for now
+  return translateMemberName('enum', name);
+}
+
+/**
+ * Rendering a method is so _special_, with so many weird edge cases, that it
+ * makes sense to put it separate from the other logic. 
+ * @param {Documentation.Member} member 
+ * @param {Documentation.Class} parent 
+ * @param {Function} output
+ */
+function renderMethod(member, parent, output, name) {
+  /** @type {string} */
+  let type = null;
+  // need to check the original one
+  if (member.type.name === 'Object' || member.type.name === 'Array') {
+    let innerType = member.type;
+    let isArray = false;
+    if (innerType.name === 'Array') {
+      // we want to influence the name, but also change the object type
+      innerType = member.type.templates[0];
+      isArray = true;
+    }
+
+    if (innerType.expression === '[Object]<[string], [string]>') {
+      // do nothing, because this is handled down the road
+    } else if (!innerType.properties) {
+      type = `dynamic`;
+    } else {
+      type = translateType(innerType, parent, (t) => {
+        return `${parent.name}${translateMemberName(member.kind, member.name, null)}Result`;
+      });
+      additionalTypes.set(type, innerType);
+
+      if (isArray)
+        type = `${type}[]`;
+    }
+  }
+
+  type = type || translateType(member.type, parent);
+  // TODO: this is something that will probably go into the docs
+  if (member.args.size == 0
+    && type !== 'void'
+    && !name.startsWith('Is')) {
+    name = `Get${name}`;
+  }
+
+  // HACK: special case for generics handling!
+  if (type === 'T') {
+    name = `${name}<T>`;
+  }
+
+  // adjust the return type for async methods
+  if (member.async)
+    if (type === 'void')
+      type = `Task`;
+    else
+      type = `Task<${type}>`;
+
+  // render args
+  let args = [];
+  let parseArg = (/** @type {Documentation.Member} */ arg) => {
+    if (arg.name === "options") {
+      arg.type.properties.forEach(prop => {
+        parseArg(prop);
+      });
+      return;
+    }
+
+    const argName = translateMemberName('argument', arg.name, null);
+    const argType = translateType(arg.type, parent, (t) => generateNameDefault(member, argName, t, parent));
+
+    args.push(`${argType} ${argName}`);
+  };
+
+  member.args.forEach(parseArg);
+
+  output(XmlDoc.renderXmlDoc(member.spec, maxDocumentationColumnWidth).map(x => `\t${x}`));
+  output(`${type} ${name}(${args.join(', ')});`);
+}
+
+/**
+ * 
+ *  @callback generateNameCallback
+ *  @param {Documentation.Type} t
+ *  @returns {string}
+ */
 
 /**
  *  @param {Documentation.Type} type 
+ *  @param {Documentation.Class} parent
+ *  @param {generateNameCallback} generateNameCallback
 */
-function translateType(type, parent) {
+function translateType(type, parent, generateNameCallback = null) {
+
+  if (!generateNameCallback) {
+    generateNameCallback = (t) => {
+      return t.name;
+    }
+  }
+
   if (type.union) {
     if (type.union[0].name === 'null') {
       // for dotnet, this is a nullable type
@@ -293,7 +365,7 @@ function translateType(type, parent) {
       if (type.union.length > 2)
         throw `Union (${parent.name}) with null is too long.`;
 
-      const innerTypeName = translateType(type.union[1]);
+      const innerTypeName = translateType(type.union[1], parent, generateNameCallback);
       // if type is primitive, or an enum, then it's nullable
       if (innerTypeName === 'bool'
         || innerTypeName === 'int') {
@@ -304,15 +376,51 @@ function translateType(type, parent) {
       return `${innerTypeName}`;
     }
 
+    if (type.union.filter(u => u.name.startsWith(`"`)).length == type.union.length) {
+      // this is an enum
+      let enumName = generateNameCallback(type);
+      if (!enumName)
+        throw `This was supposed to be an enum, but it failed generating a name, ${type.name} ${parent ? parent.name : ""}.`;
+
+      // make sure we map the enum, or invalidate the name, in case it doesn't match well
+      const potentialEnum = enumTypes.get(enumName);
+      let enumValues = type.union.map(x => x.name);
+      if (potentialEnum) {
+        // compare values
+        if (potentialEnum.join(',') !== enumValues.join(',')) {
+          // for now, we'll merge the two enums, if they have the same name, and we'll go from there
+          potentialEnum.concat(enumValues.filter(x => !potentialEnum.includes(x))); // merge & de-dupe
+          // TODO: think about doing global type annotation, where we can add comments, such as this?
+          enumTypes.set(enumName, potentialEnum);
+        }
+      } else {
+        enumTypes.set(enumName, enumValues);
+      }
+      return enumName;
+    }
+
+    if (type.expression === '[string]|[Buffer]')
+      return `byte[]`; // TODO: make sure we implement extension methods for this!
+    else if (type.expression === '[string]|[float]' || type.expression === '[string]|[float]|[boolean]')
+      return 'string'; // because users can send either 100 or 100px for most of these arguments
+    else if (type.union.length == 2 && type.union[1].name === 'Array' && type.union[1].templates[0].name === type.union[0].name)
+      return `${type.union[0].name}[]`; // an example of this is [string]|[Array]<[string]>
+    else if (type.union[0].name === 'path')
+      // we don't support path, but we know it's usually an object on the other end, and we expect
+      // the dotnet folks to use [NameOfTheObject].LoadFromPath(); method which we can provide separately
+      return translateType(type.union[1], parent, generateNameCallback);
+
+    console.log(`Not sure how to parse union ${type.name} in ${parent.name}:`);
+    console.log(type);
+
     return `Union`;
-    // throw `Not sure how to parse union ${type.name} in ${parent.name}`;
   }
 
   if (type.name === 'Array') {
     if (type.templates.length != 1)
       throw `Array (${type.name} from ${parent.name}) has more than 1 dimension. Panic.`;
 
-    let innerType = translateType(type.templates[0], parent);
+    let innerType = translateType(type.templates[0], parent, generateNameCallback);
     return `${innerType}[]`;
   }
 
@@ -325,221 +433,29 @@ function translateType(type, parent) {
   if (type.name === 'Buffer')
     return 'byte[]';
 
+  if (type.name === 'function')
+    return 'Action';
+
   if (type.name === 'Object') {
+    // take care of some common cases
+    // TODO: this can be genericized
+    if (type.templates && type.templates.length == 2) {
+      // get the inner types of both templates, and if they're strings, it's a keyvaluepair string, string, 
+      let keyType = translateType(type.templates[0], parent, generateNameCallback);
+      let valueType = translateType(type.templates[1], parent, generateNameCallback);
+      return `IEnumerable<KeyValuePair<${keyType}, ${valueType}>>`;
+    }
+
+    // else {
+    // throw 'Trying to generate a KeyValuePair of length that is not 2. Panicing.';
+    // }
+
     // this is an additional type that we need to generate
+    let objectName = generateNameCallback(type);
+    return objectName;
   }
 
   // there's a chance this is a name we've already seen before, so check
   let name = classNameMap.get(type.name) || type.name;
   return `${name}`;
-}
-
-
-
-
-
-
-/// Throw this away, from here on out.
-
-
-
-
-
-
-/**
- *  @param {Documentation.Type} type 
- *  @param {Documentation.Member} parent
- *  @returns {string}
- * */
-function _translateType(type, parent) {
-  if (type.union) {
-    if (type.union[0].name === 'null') {
-      // for dotnet, this is a nullable type
-      // unless it's something like a string
-      const typeName = _translateType(type.union[1], parent);
-
-      if (typeName === 'string'
-        || typeName === 'int') {
-        return typeName;
-      }
-
-      return `${typeName}?`;
-    } else {
-
-      let unionMap = type.union.map(u => _translateType(u, parent));
-      console.log(unionMap);
-
-      return translateAndRegisterUnion(type, parent);
-    }
-  }
-
-  if (type.name === 'Array') {
-    return `${type.templates[0].name}[]`;
-  }
-
-  if (type.templates) {
-    if (type.templates.length == 2 && type.templates[0].name === "string" && type.templates[1].name === "string") {
-      return "IList<KeyValuePair<string, string>>";
-    }
-    console.log(`${parent.name}:`);
-    console.log(type.templates);
-    return "AAAARRRGH";
-  }
-
-  // apply some basic rules
-  if (type.name === 'boolean') {
-    return 'bool';
-  }
-
-  /** @param {string} */
-  return type.name;
-}
-
-/**
- * A union in dotnet world, when it's a mix of strings only, maps to an enum. Otherwise, 
- * it most likely maps to a nullable object (Union of null and object).
- * @param {Documentation.Type} parentType
- * @param {Documentation.Member} parentMember
- */
-function translateAndRegisterUnion(parentType, parentMember) {
-  let union = parentType.union;
-
-  // we have some predetermined unions that we can map to "smarter" objects
-  if (union.length == 2 && union[0].name === 'boolean' && union[1].name === '"mixed"') {
-    return "MixedState";
-  }
-
-  if (union.filter(x => x.name.startsWith('"')).length == union.length) { // this is an enum 
-    // check if there's an enum already registered with this name
-    let enumName = translateMemberName('enum', parentMember ? parentMember.name : `${parentType.name}`, null);
-    let potentialEnum = enumTypes.get(enumName);
-    let enumValues = union.map(u => u.name.replace('"', ''));
-    // if (!potentialEnum) {
-    //   enumTypes.set(enumName, enumValues);
-    // } else {
-    //   // we should double check the enum exists, and if it's not the same, we panic (merge?)
-    //   if (potentialEnum.join(',') !== enumValues.join(',')) {
-    //     throw `Enums have the same name, but not the same values. ${enumName}: ${potentialEnum.join(', ')} vs ${enumValues}`;
-    //   }
-    // }
-
-    // return `Union<${union.map(x => x.name).join(", ")}>`;
-    return enumName;
-  }
-
-  //return `SomethingSpecial<${union.map(u => u.name).join(', ')}>`;
-  return null;
-}
-
-/**
- *    @param {Documentation.Member} member 
- *    @returns {string}
-*/
-function generateReturnType(member) {
-  let innerReturnType = _translateType(member.type, member);
-
-  if (innerReturnType && innerReturnType.startsWith('Object')) {
-    // if the return type is an Object, we should generate a new one where the name is a combination of
-    // the onwer class, method and Result, i.e. [Accessibility][Snapshot][Result].  
-    const typeName = `${member.clazz.name}${translateMemberName('', member.name, null)}Result`;
-    innerReturnType = innerReturnType.replace('Object', typeName);
-    // we need to register
-    if (member.type.name === 'union') {
-      if (member.type.union[0].name === 'null') {
-        additionalTypes.set(typeName, member.type.union[1]);
-      } else {
-        console.log(`Not sure what to do here. Investigate: ${typeName} with ${member.type.union[0].name}`);
-      }
-    } else {
-      additionalTypes.set(typeName, member.type);
-    }
-  }
-
-  return innerReturnType;
-}
-
-/** @param {Documentation.Class} member */
-function generateMembers(member) {
-  const out = [];
-
-  console.log(member.members);
-  /**** METHODS  ***/
-  member.methodsArray.forEach(method => {
-    let name = translateMemberName(method.kind, method.name, method);
-    let returnType = "Task";
-
-
-    if (method.deprecated) {
-      out.push(`[Obsolete]`);
-    }
-
-    if (method.type.name !== 'void') {
-      returnType = `Task<${generateReturnType(method)}>`;
-    }
-
-    out.push(...XmlDoc.renderXmlDoc(method.spec, maxDocumentationColumnWidth));
-
-    method.argsArray.forEach(arg => {
-      let argType = _translateType(arg.type, arg);
-      out.push(`// -- ${argType} ${arg.name}`);
-      // if (arg.type.name !== "options") {
-      //   if (arg.type.properties) {
-      //     arg.type.properties.forEach(opt => {
-      //       let paramType = _translateType(opt.type, opt);
-      //       out.push(`// ---- ${paramType} ${opt.name}`);
-      //     });
-      //   } else {
-      //     throw `Missing Properties on an option ${arg.type.name}`;
-      //   }
-      // } else {
-      //   out.push(`// ${arg.alias || arg.type.name} ${arg.name}`);
-      // }
-    });
-
-    out.push(`${returnType} ${name}();`);
-    out.push('');
-  });
-
-  /**** EVENTS  ****/
-  member.eventsArray.forEach(event => {
-
-    out.push(...XmlDoc.renderXmlDoc(event.spec, maxDocumentationColumnWidth));
-
-    let eventType = event.type.name !== 'void' ? `EventHandler<${event.type.name}>` : `EventHandler`;
-    out.push(`public event ${eventType} ${translateMemberName(event.kind, event.name, event)};`);
-    out.push(''); // we want an empty line in between
-  });
-
-  return out.map(e => `\t${e}`);
-}
-
-/** @param {Documentation.Type} type */
-function generateProperties(type) {
-  const out = [];
-
-  if (!type.properties) {
-    return out;
-  }
-
-  type.properties.forEach(property => {
-    if (out.length > 0) {
-      out.push(``);
-    }
-
-    const name = translateMemberName('property', property.name, null);
-
-    const docs = XmlDoc.renderXmlDoc(property.spec, maxDocumentationColumnWidth);
-    if (property.type.union && property.type.union[0].name !== "null" && !property.type.union[1].name.startsWith('"')) {
-      // we need to actually split this into multiple properties
-      property.type.union.forEach(unionType => {
-        out.push(...docs);
-        out.push(`public ${_translateType(unionType, property)} ${name}As${translateMemberName('union', unionType.name, null)} { get; set; }`)
-      });
-    } else {
-      out.push(...docs);
-      out.push(`public ${_translateType(property.type, property)} ${name} { get; set; }`)
-    }
-  });
-
-  return out.map(e => `\t${e}`);
 }
