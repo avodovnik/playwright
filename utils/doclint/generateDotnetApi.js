@@ -339,7 +339,7 @@ function translateType(type, parent) {
 
 
 
-
+/// Throw this away, from here on out.
 
 
 
