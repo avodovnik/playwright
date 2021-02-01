@@ -16,6 +16,8 @@ background_page = context.wait_for_event("backgroundpage")
 ```
 
 ## event: ChromiumBrowserContext.backgroundpage
+* langs:
+  - alias-csharp: BackgroundPage
 - type: <[Page]>
 
 Emitted when new background page is created in the context.
@@ -25,6 +27,8 @@ Only works with persistent context.
 :::
 
 ## event: ChromiumBrowserContext.serviceworker
+* langs:
+  - alias-csharp: ServiceWorker
 - type: <[Worker]>
 
 Emitted when new service worker is created in the context.

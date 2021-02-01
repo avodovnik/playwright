@@ -8,18 +8,24 @@ The [WebSocket] class represents websocket connections in the page.
 Fired when the websocket closes.
 
 ## event: WebSocket.framereceived
+* langs:
+  - alias-csharp: FrameReceived
 - type: <[Object]>
   - `payload` <[string]|[Buffer]> frame payload
 
 Fired when the websocket recieves a frame.
 
 ## event: WebSocket.framesent
+* langs:
+  - alias-csharp: FrameSent
 - type: <[Object]>
   - `payload` <[string]|[Buffer]> frame payload
 
 Fired when the websocket sends a frame.
 
 ## event: WebSocket.socketerror
+* langs:
+  - alias-csharp: SocketError
 - type: <[String]>
 
 Fired when the websocket has an error.

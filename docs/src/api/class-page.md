@@ -175,6 +175,8 @@ Emitted when a JavaScript dialog appears, such as `alert`, `prompt`, `confirm` o
 to the dialog via [`method: Dialog.accept`] or [`method: Dialog.dismiss`] methods.
 
 ## event: Page.domcontentloaded
+* langs:
+  - alias-csharp: DOMContentLoaded
 - type: <[Page]>
 
 Emitted when the JavaScript [`DOMContentLoaded`](https://developer.mozilla.org/en-US/docs/Web/Events/DOMContentLoaded)
@@ -193,6 +195,8 @@ not performed and user has no access to the downloaded files.
 :::
 
 ## event: Page.filechooser
+* langs:
+  - alias-csharp: FileChooser
 - type: <[FileChooser]>
 
 Emitted when a file chooser is supposed to appear, such as after clicking the  `<input type=file>`. Playwright can
@@ -209,16 +213,22 @@ page.on("filechooser", lambda file_chooser: file_chooser.set_files("/tmp/myfile.
 ```
 
 ## event: Page.frameattached
+* langs:
+  - alias-csharp: FrameAttached
 - type: <[Frame]>
 
 Emitted when a frame is attached.
 
 ## event: Page.framedetached
+* langs:
+  - alias-csharp: FrameDetached
 - type: <[Frame]>
 
 Emitted when a frame is detached.
 
 ## event: Page.framenavigated
+* langs:
+  - alias-csharp: FrameNavigated
 - type: <[Frame]>
 
 Emitted when a frame is navigated to a new url.
@@ -229,11 +239,15 @@ Emitted when a frame is navigated to a new url.
 Emitted when the JavaScript [`load`](https://developer.mozilla.org/en-US/docs/Web/Events/load) event is dispatched.
 
 ## event: Page.pageerror
+* langs:
+  - alias-csharp: PageError
 - type: <[Error]>
 
 Emitted when an uncaught exception happens within the page.
 
 ## event: Page.popup
+* langs:
+  - alias-csharp: PopUp
 - type: <[Page]>
 
 Emitted when the page opens a new tab or window. This event is emitted in addition to the
