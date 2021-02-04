@@ -210,6 +210,8 @@ The default browser context cannot be closed.
 :::
 
 ## async method: BrowserContext.cookies
+* langs:
+  - alias-csharp: GetCookiesAsync
 - returns: <[Array]<[Object]>>
   - `name` <[string]>
   - `value` <[string]>
