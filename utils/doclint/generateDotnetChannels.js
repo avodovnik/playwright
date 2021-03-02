@@ -22,6 +22,7 @@ const fs = require('fs');
 const yaml = require('yaml');
 const { args } = require('commander');
 const { EOL } = require('os');
+const { render } = require('../markdown');
 
 // get the template for a class
 const template = fs.readFileSync("./templates/interface.cs", 'utf-8')
@@ -34,6 +35,8 @@ const typeMap = new Map([
   ["string?", "string"],
   ["number", "float"],
   ["number?", "float?"],
+  ["binary", "byte[]"],
+  ["json", "string"]
 ]);
 
 const enumValuesMap = new Map([
@@ -67,9 +70,8 @@ function generateChannels(location) {
   checkAndMakeDir(enumsDir);
 
   for (const [name, value] of Object.entries(protocol)) {
-    if (value.type === 'object') {
-      typeMap.set(name, name);
-    }
+    const translatedName = translateMemberName(value.type, name);
+    typeMap.set(name, translatedName);
   }
 
   // const inherits = new Map();
@@ -115,8 +117,15 @@ function renderObject(kind, name, obj, originalName) {
   out.push(`public partial class ${name}`);
   out.push(`{`);
 
+  /**
+   * @param {string[]} buffer
+   */
+  let push = buffer => out.push(...buffer.map(x => `\t${x}`));
   if (obj.properties)
-    out.push(...renderProperties(kind, obj.properties).map(x => `\t${x}`));
+    push(renderProperties(kind, obj.properties));
+
+  if (obj.commands)
+    push(renderCommands(obj.commands));
 
   out.push(`}`);
   return out;
@@ -133,11 +142,38 @@ function renderProperties(kind, properties) {
     const propertyName = translateMemberName("property", name);
     if (out.length != 0)
       out.push("");
-
     // get the type
     const type = translateType(value, propertyName);
     out.push(`[JsonProperty("${name}")]`);
     out.push(`public ${type} ${propertyName} { get; set; }`);
+  }
+  return out;
+}
+
+function renderCommands(commands) {
+  let out = [];
+  for (const [name, value] of Object.entries(commands)) {
+    let translatedName = translateMemberName("method", name);
+    if(!value) return out;
+    if (out.length != 0)
+      out.push("");
+    const returns = new Map();
+    if(value.returns) {
+      for(const [returnName, returnValue] of Object.entries(value.returns)) {
+        returns.set(returnName, translateType(returnValue));
+      }
+    }
+
+    let returnType = '';
+    if(returns.size == 0) {
+      returnType = 'Task';
+    } else if(returns.size == 1) {
+      returnType = returns.entries().next().value[1];
+    } else {
+      console.log(Array.from(returns.entries));
+      returnType = `(${Array.from(returns).map((item) => `${item[1]} ${item[0]}`).join(', ')})`;
+    }
+    out.push(`// Command: ${translatedName} of ${returnType}`);
   }
   return out;
 }
@@ -176,6 +212,8 @@ function translateMemberName(kind, name) {
   switch (kind) {
     case "interface":
       return `${assumedName}Channel`;
+    case "method":
+      return `${assumedName}Async`;
     default:
       return assumedName;
   }
@@ -189,7 +227,7 @@ function translateMemberName(kind, name) {
 function registerEnum(enumName, values) {
   let out = [];
   values.forEach(val => {
-    if(val === null) return;
+    if (val === null) return;
     let translatedVal = enumValuesMap.get(val) || val;
     translatedVal = translateMemberName("EnumValue", translatedVal);
     if (out.length !== 0)
