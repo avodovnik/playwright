@@ -151,11 +151,19 @@ assert request.redirected_from.redirected_to == request
 ```
 
 ## method: Request.resourceType
+* langs: js, java, python
 - returns: <[string]>
 
 Contains the request's resource type as it was perceived by the rendering engine. ResourceType will be one of the
 following: `document`, `stylesheet`, `image`, `media`, `font`, `script`, `texttrack`, `xhr`, `fetch`, `eventsource`,
 `websocket`, `manifest`, `other`.
+
+## method: Request.resourceType
+* langs: csharp
+- returns: <[string]>
+
+Contains the request's resource type as it was perceived by the rendering engine. 
+You can use [PlaywrightSharp.Contracts.Constants.ResourceTypes] to access the constants for all the values available as a result of this method.
 
 ## async method: Request.response
 - returns: <[null]|[Response]>
